@@ -1,0 +1,971 @@
+---
+title: "PM Time trends"
+author: "Pablo Ruiz"
+format: 
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-expand: 2
+    theme: cosmo
+editor: source
+---
+
+# Load libraries and functions
+
+```{r}
+#| output: false
+
+library(lubridate)
+library(splines)
+library(plyr)
+source("0. Functions.R")
+
+```
+
+# 1. Load data
+
+  Usamos **base_all_nse** que es la última enviada e incluye exposición **preconcepction** y **NSE** sacado del shape de ADI.
+
+```{r}
+load("Out/Bases2.RData")
+data<-basesf_all_nse
+
+```
+
+# 2. Create time subsets
+
+  Aquí hacemos un subset por **fechaini **(como si fuera cohorte), todas desde el 2010 al 2015.
+```{r}
+### CREATE FINAL SUBSET
+data<-data[data$fechaini>=as.Date("2010-01-01","%Y-%m-%d") &
+                  data$fechaini<=as.Date("2015-12-31","%Y-%m-%d"), ]
+nrow(data)
+
+```
+
+# 3. Check N by year
+
+**Redo year:** year_concep es el año de fechaini. Fechaini es?????
+
+```{r}
+### redo year
+data$year_concep2<-lubridate::year(data$fechaini)
+
+### N by year
+
+table(data$year_concep, exclude=NULL)
+table(data$year_concep2, exclude=NULL)
+table(data$year_concep2, data$year_concep)
+
+table(pmts$year)
+
+
+```
+
+# 4. Create time series for PM (t1)
+
+  Aquí vamos a crear un set (**ts**) que sea un time-series pero de solo PM. Se usará solo el trimestre 1 de sitio central.
+
+```{r}
+#| warning: false
+
+
+#### CREAR MOLDE
+
+ts <- data.frame(fechaini=seq(as.Date("2010-01-01"),
+                                  as.Date("2015-12-31"),"day") )
+
+
+### COLLAPSE by date
+
+pm<-ddply(data, .(fechaini), summarise,
+          t1=mean(na.omit(t1_PM25_cs)),
+          N=length(na.omit(t1_PM25_cs)) )
+
+
+### MERGE CON MOLDE
+
+ts<-merge(ts, pm, by="fechaini", all.x=T)
+
+summary(ts)
+
+
+
+### FILL NAs with lag
+
+ts$t1<-ifelse(is.na(ts$t1), Hmisc::Lag(ts$t1), ts$t1)
+summary(ts)
+
+
+
+```
+
+
+
+
+# 5. Peng Chapter 4 & 5
+
+## 5.2 Explorar
+
+### Visualizar Trimestre 1
+
+  Así se ve la serie.Ojo con **HOMBRO** en 2010.
+```{r}
+
+plot(t1 ~ fechaini, ts, cex=0.6, ylab=expression(PM[2.5]~t1), xlab="Fecha")
+
+summary(ts)
+
+```
+
+
+
+### Visualizar pm ts
+
+  Así se ve la serie.
+```{r}
+
+plot(PM25LE ~ fecha, pmts, cex=0.6, ylab=expression(PM[2.5]~"1day"), xlab="Fecha")
+
+summary(pmts)
+
+```
+
+  Usar **filter**.
+```{r}
+
+pmts$f7<-filter(pmts$PM25LE, rep((1/7),7))
+plot(f7 ~ fecha, pmts, cex=0.6, ylab=expression(PM[2.5]~"7days"), xlab="Fecha")
+
+pmts$f30<-filter(pmts$PM25LE, rep((1/30),30))
+plot(f30 ~ fecha, pmts, cex=0.6, ylab=expression(PM[2.5]~"30days"), xlab="Fecha")
+
+pmts$f90<-filter(pmts$PM25LE, rep((1/90),90))
+plot(f90 ~ fecha, pmts, cex=0.6, ylab=expression(PM[2.5]~"90days"), xlab="Fecha")
+
+pmts$f365<-filter(pmts$PM25LE, rep((1/365),365))
+plot(f365 ~ fecha, pmts, cex=0.6, ylab=expression(PM[2.5]~"365days"), xlab="Fecha")
+
+```
+  
+ [ **¿Why are there so big jumps in 365 days filters?**]{style="color:red; font-size: 300%;"}
+
+
+
+
+### Modelo más simple, lineal: pm from women
+
+```{r}
+
+model<-lm(t1 ~ fechaini, ts)
+summary(model)
+
+```
+
+  Pareciera ir **disminuyendo**
+
+
+
+
+### Modelo más simple, lineal: pm from ts
+
+```{r}
+
+model<-lm(PM25LE ~ fecha, pmts)
+summary(model)
+
+```
+
+  Pareciera ir **disminuyendo** menos rápido que mujeres. ¿Efecto 2009?
+
+
+
+  
+  
+### Simple splines: pm from women
+
+```{r}
+
+# Modelo con ns
+model <- lm(t1 ~ ns(fechaini, df = 2 * 6), ts)
+
+# plot
+par(mar = c(2, 4, 0, 0))
+plot(t1 ~ fechaini, ylab = expression(PM[2.5] ~ t1), cex = 0.8, data=ts)
+lines(ts$fechaini, predict(model, fechaini=ts$fechaini), col="blue")
+
+```
+
+  Modelo con ns se ve desfasado pues hay 2 df por año. Obliga a tener peaks in ene y jun. Como t1 es promedio de primer trimestre de fecha ini, t1 representa PM desde fecha ini a 1 mes más. Ej marzo 1 incluye marzo a mayo entonces se anticipa el peak. **¡Ojo hombro en 2010!**.
+
+
+
+
+
+  
+### Simple splines: pm from ts
+
+```{r}
+
+# Modelo con ns
+model <- lm(PM25LE ~ ns(fecha, df = 2 * 8), pmts)
+
+# plot
+par(mar = c(2, 4, 0, 0))
+plot(PM25LE ~ fecha, ylab = expression(PM[2.5] ~ ts), cex = 0.8, data=pmts)
+lines(pmts$fecha, predict(model, fecha=pmts$fecha), col="blue")
+
+```
+
+  PM como ts ajusta bien la temporalidad, mínimos en enero y máximos en junio.
+
+
+
+## 5.2 autocorrelation
+
+### Autocorrelación para PM data women
+
+```{r, fig.height=6}
+# set par
+par(mfrow=c(2,1), mar = c(3, 3, 1, 0), mgp=c(2,1,0))
+
+# Autocorrelación simple
+acf(ts$t1, lag.max = 50, main = "(a) t1 autocorrelación", ci.col = "black")
+
+# Remove seasonal parcialmente
+model <- lm(ts$t1 ~ ns(ts$fechaini, 2 * 6))
+resid <- resid(model)
+acf(resid, lag.max = 50, main = "(b) t1 autocorrelacion (seasonality removed)",
+    ci.col = "black")
+
+```
+
+  Se mantiene seasonality porque modelo simple de ns no ajusta bien al t1.
+
+
+### Autocorrelación para PM ts
+
+```{r, fig.height=6}
+# set par
+par(mfrow=c(2,1), mar = c(3, 3, 1, 0), mgp=c(2,1,0))
+
+# Autocorrelación simple
+acf(pmts$PM25LE, lag.max = 50, main = "(a) PM ts autocorrelación", ci.col = "black")
+
+# Remove seasonal parcialmente
+model <- lm(pmts$PM25LE ~ ns(pmts$fecha, 2 * 8))
+resid <- resid(model)
+acf(resid, lag.max = 50, main = "(b) PM ts autocorrelacion (seasonality removed)",
+    ci.col = "black")
+
+```
+
+Se elimina grandemente la autocorrelación. Queda en pocos días.
+
+
+
+## 5.3 Explore timescale decompositions (page 50)
+
+### 5.3.1 Decompose PM data women
+
+### Simple model
+
+```{r}
+
+model<-lm(t1 ~ fechaini, ts)
+summary(model)
+
+
+```
+
+
+### Filters
+
+```{r, fig.height=6}
+
+### Filter year
+ts$t1_y <-stats::filter(ts$t1, rep(1/365, 365))
+ts$t1_ry<-ts$t1-ts$t1_y
+ts$t1_s <-filter(ts$t1_ry, rep(1/90, 90))
+ts$t1_rs<-ts$t1_ry-ts$t1_s
+ts$t1_w <- filter(ts$t1_rs, rep(1/7, 7))
+ts$t1_r <- ts$t1_rs-ts$t1_w
+
+model <- lm(ts$t1 ~ ts$t1_y + ts$t1_s + ts$t1_w + ts$t1_r)
+summary(model)
+
+# Predict
+
+pr <- predict(model, type = "terms")
+summary(pr)
+class(pr)
+dim(pr)
+
+### Plots
+par(mfrow = c(4, 1), mar = c(3, 4, 3, 2) )
+plot(pr[, 1], type = "l", ylab = "Trend", main = "(a) yearly")
+plot(pr[, 2], type = "l", ylab = "Trend", main = "(b) 90 days")
+plot(pr[, 3], type = "l", ylab = "Trend", main = "(c) weekly")
+plot(pr[, 4], type = "l", ylab = "Trend", main = "(d) resid")
+
+### ACF
+
+par(mfrow = c(4, 1), mar = c(3, 4, 3, 2) )
+acf(pr[,1], lag.max = 50, main = "Autocorrelation year", ci.col = "black")
+acf(pr[,2], lag.max = 50, main = "Autocorrelation 90d", ci.col = "black")
+acf(pr[,3], lag.max = 50, main = "Autocorrelation weekly", ci.col = "black")
+acf(pr[,4], lag.max = 50, main = "Autocorrelation resid", ci.col = "black")
+
+
+```
+
+
+### time decomposition using ts
+
+```{r}
+### library
+library(tsModel)
+
+### Decomposition
+poll.dc <- tsdecomp(ts$t1, c(1, 2, 7, 2191))
+class(poll.dc)
+head(poll.dc)
+summary(poll.dc)
+dim(poll.dc)
+
+### Plots
+par(mfrow = c(3, 1), mar = c(3, 4, 3, 2) + 0.1)
+plot(ts$fechaini, poll.dc[, 1], type = "l", ylab = "Trend", main = "(a)")
+plot(ts$fechaini, poll.dc[, 2], type = "l", ylab = "Seasonal", main = "(b)")
+plot(ts$fechaini, poll.dc[, 3], type = "l", ylab = "Residual", main = "(c)")
+mtext("PM from women", outer=T)
+### ACF
+
+par(mfrow = c(3, 1), mar = c(3, 4, 3, 2) + 0.1)
+acf(poll.dc[, 1], lag.max = 50, main = "Autocorr trend", ci.col = "black")
+acf(poll.dc[, 2], lag.max = 50, main = "Autocorr seasonal", ci.col = "black")
+acf(poll.dc[, 3], lag.max = 50, main = "Autocorr residual", ci.col = "black")
+
+```
+
+
+
+### 5.3.2 Decompose PM ts
+
+
+### Simple model
+
+```{r}
+
+model<-lm(PM25LE ~ fecha, pmts)
+summary(model)
+
+
+```
+
+
+### Filters
+
+```{r, fig.height=6}
+
+### Filter year
+pmts$pm_y <-stats::filter(pmts$PM25LE, rep(1/365, 365))
+pmts$pm_ry<-pmts$PM25LE-pmts$pm_y
+pmts$pm_s <-filter(pmts$pm_ry, rep(1/90, 90))
+pmts$pm_rs<-pmts$pm_ry-pmts$pm_s
+pmts$pm_w <- filter(pmts$pm_rs, rep(1/7, 7))
+pmts$pm_r <- pmts$pm_rs-pmts$pm_w
+
+model <- lm(pmts$PM25LE ~ pmts$pm_y + pmts$pm_s + pmts$pm_w + pmts$pm_r)
+summary(model)
+
+# Predict
+
+pr <- predict(model, type = "terms")
+summary(pr)
+class(pr)
+dim(pr)
+
+### Plots
+par(mfrow = c(4, 1), mar = c(3, 4, 3, 2), oma=c(0,0,1,0))
+plot(pr[, 1], type = "l", ylab = "Trend", main = "(a) yearly")
+plot(pr[, 2], type = "l", ylab = "Trend", main = "(b) 90 days")
+plot(pr[, 3], type = "l", ylab = "Trend", main = "(c) weekly")
+plot(pr[, 4], type = "l", ylab = "Trend", main = "(d) resid")
+mtext("data pm ts", outer=T)
+
+### ACF
+
+par(mfrow = c(4, 1), mar = c(3, 4, 3, 2) )
+acf(pr[,1], lag.max = 50, main = "Autocorrelation year", ci.col = "black")
+acf(pr[,2], lag.max = 50, main = "Autocorrelation 90d", ci.col = "black")
+acf(pr[,3], lag.max = 50, main = "Autocorrelation weekly", ci.col = "black")
+acf(pr[,4], lag.max = 50, main = "Autocorrelation resid", ci.col = "black")
+
+
+```
+
+
+### time decomposition using  pm ts
+
+```{r}
+
+
+
+### Decomposition
+poll.dc <- tsdecomp(pmts$PM25LE, c(1, 2, 9, 2922))
+class(poll.dc)
+head(poll.dc)
+summary(poll.dc)
+dim(poll.dc)
+
+### Plots
+par(mfrow = c(3, 1), mar = c(3, 4, 3, 2) + 0.1)
+plot(pmts$fecha, poll.dc[, 1], type = "l", ylab = "Trend", main = "(a)")
+plot(pmts$fecha, poll.dc[, 2], type = "l", ylab = "Seasonal", main = "(b)")
+plot(pmts$fecha, poll.dc[, 3], type = "l", ylab = "Residual", main = "(c)")
+mtext("PM from ts", outer=T)
+
+### ACF
+
+par(mfrow = c(3, 1), mar = c(3, 4, 3, 2) + 0.1)
+acf(poll.dc[, 1], lag.max = 50, main = "Autocorr trend", ci.col = "black")
+acf(poll.dc[, 2], lag.max = 50, main = "Autocorr seasonal", ci.col = "black")
+acf(poll.dc[, 3], lag.max = 50, main = "Autocorr residual", ci.col = "black")
+
+```
+
+ From Dominici FD, McDermott A, Zeger SL, Samet JM (2003). “Airborne particulate matter and mortality: Timescale effects in four US cities”, American Journal of Epidemiology, 157 (12), 1055–1065.
+
+
+
+### 5.3.3 More detail timescale: pm from women
+
+
+ 
+ 
+```{r, fig.height=6}
+
+
+### Create the decomposition
+
+freq.cuts <- c(1, 2, 7, round(2191/c(60,30, 14, 7, 3.5)), 2191)
+poll.dc <- tsdecomp(ts$t1, freq.cuts)
+colnames(poll.dc) <- c("Long-term", "Seasonal","2-12 months", "1-2 months",
+                       "2-4 weeks","1-2 weeks", "3.5 days to 1 week",
+                       "Less than 3.5 days")
+
+### PLOT
+
+par(mfcol = c(4, 2), mar = c(2, 2, 2,1))
+cn <- colnames(poll.dc)
+for (i in 1:8)
+  {
+  plot(ts$fechaini, poll.dc[, i], type = "l",
+  frame.plot = FALSE, main = cn[i],
+  ylab = "")
+  }
+
+### ACF
+
+par(mfrow = c(4, 2), mar = c(3, 3, 3, 1), mgp=c(2,1,0))
+for (i in 1:8)
+{
+  acf(poll.dc[, i], lag.max = 50, main = paste("acf",i), ci.col = "black")
+}
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+### 5.3.4 More detail timescale: pm from ts
+
+ 
+```{r, fig.height=6}
+
+
+### Create the decomposition
+
+freq.cuts <- c(1, 2, 9, round(2922/c(60,30, 14, 7, 3.5)), 2922)
+poll.dc <- tsdecomp(pmts$PM25LE, freq.cuts)
+colnames(poll.dc) <- c("Long-term", "Seasonal","2-12 months", "1-2 months",
+                       "2-4 weeks","1-2 weeks", "3.5 days to 1 week",
+                       "Less than 3.5 days")
+
+### PLOT
+
+par(mfcol = c(4, 2), mar = c(2, 2, 2,1))
+cn <- colnames(poll.dc)
+for (i in 1:8)
+  {
+  plot(pmts$fecha, poll.dc[, i], type = "l",
+  frame.plot = FALSE, main = cn[i],
+  ylab = "")
+  }
+
+### ACF
+
+par(mfrow = c(4, 2), mar = c(3, 3, 3, 1), mgp=c(2,1,0))
+for (i in 1:8)
+{
+  acf(poll.dc[, i], lag.max = 50, main = paste("acf",i), ci.col = "black")
+}
+
+
+
+```
+
+
+
+# 6. Peng Chapter 6 (page 68) Statistical Models
+
+
+## 6.1 Model PM with smooth
+
+### 6.1.1 from women data
+
+```{r}
+#| warning: false
+
+library(gam)
+
+### MODEL WITH GAM
+model1 <- gam(ts$t1 ~ s(fechaini, 1 * 6), data = ts)
+ts$t1_pr1 <- predict(model1, ts)
+
+model2 <- gam(ts$t1 ~ s(fechaini, 2 * 6), data = ts)
+ts$t1_pr2 <- predict(model2, ts)
+
+model3 <- gam(ts$t1 ~ s(fechaini, 4 * 6), data = ts)
+ts$t1_pr3 <- predict(model3, ts)
+
+model4 <- gam(ts$t1 ~ s(fechaini, 12 * 6), data = ts)
+ts$t1_pr4 <- predict(model4, ts)
+
+model5 <- gam(ts$t1 ~ s(fechaini, 5), data = ts)
+ts$t1_pr5 <- predict(model5, ts)
+
+model6 <- gam(ts$t1 ~ s(fechaini, 4), data = ts)
+ts$t1_pr6 <- predict(model6, ts)
+
+model7 <- gam(ts$t1 ~ s(fechaini, 3), data = ts)
+ts$t1_pr7 <- predict(model7, ts)
+
+
+# plot
+par(mar = c(2, 4, 0, 0))
+plot(t1 ~ fechaini, ylab = expression(PM[2.5] ~ t1), cex = 0.8, data=ts)
+lines(ts$fechaini, ts$t1_pr1, col="blue", lwd=4)
+lines(ts$fechaini, ts$t1_pr2, col="blue2")
+lines(ts$fechaini, ts$t1_pr3, col="blue3")
+lines(ts$fechaini, ts$t1_pr4, col="blue4")
+lines(ts$fechaini, ts$t1_pr5, col="purple2", lwd=2)
+lines(ts$fechaini, ts$t1_pr6, col="orange2", lwd=4)
+lines(ts$fechaini, ts$t1_pr7, col="darkred", lwd=4)
+
+
+```
+
+**¡OJO 2010!**
+
+
+### 6.1.2 from pm ts
+
+```{r}
+#| warning: false
+
+library(gam)
+
+### MODEL WITH GAM
+model1 <- gam(pmts$PM25LE ~ s(fecha, 1 * 6), data = pmts)
+pmts$pm_pr1 <- predict(model1, pmts)
+
+model2 <- gam(pmts$PM25LE ~ s(fecha, 2 * 6), data = pmts)
+pmts$pm_pr2 <- predict(model2, pmts)
+
+model3 <- gam(pmts$PM25LE ~ s(fecha, 4 * 6), data = pmts)
+pmts$pm_pr3 <- predict(model3, pmts)
+
+model4 <- gam(pmts$PM25LE ~ s(fecha, 12 * 6), data = pmts)
+pmts$pm_pr4 <- predict(model4, pmts)
+
+model5 <- gam(pmts$PM25LE ~ s(fecha, 5), data = pmts)
+pmts$pm_pr5 <- predict(model5, pmts)
+
+model6 <- gam(pmts$PM25LE ~ s(fecha, 4), data = pmts)
+pmts$pm_pr6 <- predict(model6, pmts)
+
+model7 <- gam(pmts$PM25LE ~ s(fecha, 3), data = pmts)
+pmts$pm_pr7 <- predict(model7, pmts)
+
+
+# plot
+par(mar = c(2, 4, 0, 0))
+plot(PM25LE ~ fecha, ylab = expression(PM[2.5] ~ ts), cex = 0.8, 
+     ylim=c(0,100), data=pmts)
+lines(pmts$fecha, pmts$pm_pr1, col="black", lwd=2)
+lines(pmts$fecha, pmts$pm_pr2, col="orange", lwd=2)
+lines(pmts$fecha, pmts$pm_pr3, col="red",lwd=2)
+lines(pmts$fecha, pmts$pm_pr4, col="blue4",lwd=2)
+lines(pmts$fecha, pmts$pm_pr5, col="purple2", lwd=2)
+lines(pmts$fecha, pmts$pm_pr6, col="orange2", lwd=4)
+lines(pmts$fecha, pmts$pm_pr7, col="darkred", lwd=4)
+
+
+```
+
+
+### 6.1.3 Two Smooths
+```{r}
+#| warning: false
+
+### MODEL WITH GAM
+model1 <- gam(pmts$PM25LE ~ s(fecha, 1 * 5)+s(fecha, 4 * 7), data = pmts)
+summary(model1)
+pr <- predict(model1, type="terms")
+summary(pr)
+
+pmts$pr1<-pr[,1]
+pmts$pr2<-pr[,2]
+
+# plot
+par(mar = c(2, 4, 0, 0))
+plot(pmts$fecha, pmts$pr2, col="darkblue", lwd=2, type="l")
+plot(pmts$fecha, pmts$pr1, col="orange", lwd=2, type="l")
+
+
+```
+
+
+
+## 6.2 (page 90) Estimate df with bruto 
+
+
+
+### 6.2.1 Estimate for data from women
+
+```{r}
+#| warning: false
+
+library(mda)
+
+## GET DF
+br.fit<-bruto(ts$fechaini, ts$t1)
+brdf<-br.fit$df
+print(brdf)
+
+## PREDICT
+model1 <- gam(ts$t1 ~ s(fechaini, brdf), data = ts)
+ts$t1_pr1 <- predict(model1, ts)
+
+# plot
+par(mar = c(2, 4, 0, 0))
+plot(t1 ~ fechaini, ylab = expression(PM[2.5] ~ t1), cex = 0.8, data=ts)
+lines(ts$fechaini, ts$t1_pr1, col="orange2", lwd=4)
+
+```
+
+
+
+
+
+
+### 6.2.2 Estimate for data from pm ts
+
+```{r}
+#| warning: false
+
+
+## GET DF
+br.fit<-bruto(pmts$fecha, pmts$PM25LE)
+brdf<-br.fit$df
+print(brdf)
+
+## PREDICT
+model1 <- gam(pmts$PM25LE ~ s(fecha, brdf), data = pmts)
+pmts$pm_pr1 <- predict(model1, pmts)
+
+# plot
+par(mar = c(2, 4, 0, 0))
+plot(PM25LE ~ fecha, ylab = expression(PM[2.5] ~ ts), cex = 0.8, data=pmts)
+lines(pmts$fecha, pmts$pm_pr1, col="orange2", lwd=4)
+
+```
+
+
+
+
+# 7. Sin cosine
+
+## 7.1 Preliminar
+
+```{r}
+
+t<-seq(0,10,0.1)
+
+d=0
+plot(sin(t)-cos(t)*d ~ t, type="l", col="red")
+d=0.2
+lines(sin(t)-cos(t)*d ~ t, type="l", col="red2")
+d=0.5
+lines(sin(t)-cos(t)*d ~ t, type="l", col="red3")
+d=0.7
+lines(sin(t)-cos(t)*d ~ t, type="l", col="red4")
+d=1
+lines(sin(t)-cos(t)*d ~ t, type="l", col="red4")
+
+plot(1*sin(t)+0*cos(t) ~ t, type="l", col="red")
+lines(0*sin(t)+1*cos(t) ~ t, type="l", col="red3")
+lines(0.25*sin(t)+0.85*cos(t) ~ t, type="l", col="purple")
+lines(0.85*sin(t)+0.25*cos(t) ~ t, type="l", col="purple3")
+lines(-0.5*sin(t)-0.5*cos(t) ~ t, type="l", col="orange")
+
+plot(3*sin(t)+3*cos(t) ~ t, type="l", col="red")
+lines(1*sin(t)+1*cos(t) ~ t, type="l", col="red3")
+
+
+
+```
+
+
+
+## 7.2 Sin cosine to pm
+
+### 7.2.1. women pm
+
+```{r}
+plot(data$t1_PM25_cs ~ data$fechaini)
+
+
+
+### TEST https://stats.stackexchange.com/questions/60994/fit-a-sinusoidal-term-to-data
+data$time<-as.numeric(data$fechaini-as.Date("2010-01-01"))
+summary(data$time)
+reslm <- lm(data$t1_PM25_cs ~ sin(2*pi/365*data$time) +
+              cos(2*pi/365*data$time))
+summary(reslm)
+
+rg <- diff(range(data$t1_PM25_cs))
+plot(data$t1_PM25_cs~data$time,ylim=c(min(data$t1_PM25_cs)-
+                                        0.1*rg,max(data$t1_PM25_cs)+0.1*rg))
+points(fitted(reslm)~data$time,col=4,lty=2) 
+
+
+
+
+
+### second harminic
+data$time<-as.numeric(data$fechaini-as.Date("2010-01-01"))
+summary(data$time)
+reslm <- lm(data$t1_PM25_cs ~ 
+              sin(2*pi/365*data$time) +
+              cos(2*pi/365*data$time) +
+              sin(4*pi/365*data$time) +
+              cos(4*pi/365*data$time) 
+            )
+summary(reslm)
+
+rg <- diff(range(data$t1_PM25_cs))
+plot(data$t1_PM25_cs~data$time,ylim=c(min(data$t1_PM25_cs)-
+                                        0.1*rg,max(data$t1_PM25_cs)+0.1*rg))
+points(fitted(reslm)~data$time,col=4,lty=2) 
+
+```
+
+
+
+
+
+### 7.2.2. ts pm
+
+```{r}
+plot(pmts$PM25LE ~ pmts$fecha)
+
+
+
+### TEST https://stats.stackexchange.com/questions/60994/fit-a-sinusoidal-term-to-data
+
+### CREATE TIME
+pmts$time<-as.numeric(pmts$fecha-as.Date("2009-01-01"))
+summary(pmts$time)
+
+### MODEL
+reslm <- lm(pmts$PM25LE ~ sin(2*pi/365*pmts$time) +
+              cos(2*pi/365*pmts$time))
+summary(reslm)
+
+
+### PLOTS
+rg <- diff(range(pmts$PM25LE))
+plot(pmts$PM25LE~pmts$fecha,
+     ylim=c(min(pmts$PM25LE)-0.1*rg,max(pmts$PM25LE)+0.1*rg))
+pmts$fit<-fitted(reslm)
+lines(pmts$fit~pmts$fecha,col=4,lwd=2) 
+
+
+
+
+
+########################## second harminic
+
+pmts$time<-as.numeric(pmts$fecha-as.Date("2010-01-01"))
+
+summary(pmts$time)
+reslm <- lm(pmts$PM25LE ~ 
+              sin(2*pi/365*pmts$time) +
+              cos(2*pi/365*pmts$time) +
+              sin(4*pi/365*pmts$time) +
+              cos(4*pi/365*pmts$time) 
+            )
+summary(reslm)
+
+### PLOTS
+rg <- diff(range(pmts$PM25LE))
+plot(pmts$PM25LE~pmts$fecha,
+     ylim=c(min(pmts$PM25LE)-0.1*rg,max(pmts$PM25LE)+0.1*rg))
+pmts$fit<-fitted(reslm)
+lines(pmts$fit~pmts$fecha,col=4,lwd=2) 
+
+```
+
+
+
+## 7.3. gam + sin cosine
+
+### 7.3.1. women pm
+
+```{r}
+plot(data$t1_PM25_cs ~ data$fechaini)
+
+
+
+### TEST https://stats.stackexchange.com/questions/60994/fit-a-sinusoidal-term-to-data
+data$time<-as.numeric(data$fechaini-as.Date("2010-01-01"))
+summary(data$time)
+
+reslm <- gam(data$t1_PM25_cs ~ s(data$time, 5) +
+               sin(2*pi/365*data$time) +
+              cos(2*pi/365*data$time))
+summary(reslm)
+
+rg <- diff(range(data$t1_PM25_cs))
+plot(data$t1_PM25_cs~data$time,ylim=c(min(data$t1_PM25_cs)-
+                                        0.1*rg,max(data$t1_PM25_cs)+0.1*rg))
+points(fitted(reslm)~data$time,col=4,lty=2) 
+
+
+
+
+
+### second harminic
+data$time<-as.numeric(data$fechaini-as.Date("2010-01-01"))
+summary(data$time)
+reslm <- lm(data$t1_PM25_cs ~ s(data$time, 5) +
+              sin(2*pi/365*data$time) +
+              cos(2*pi/365*data$time) +
+              sin(4*pi/365*data$time) +
+              cos(4*pi/365*data$time) 
+            )
+summary(reslm)
+
+rg <- diff(range(data$t1_PM25_cs))
+plot(data$t1_PM25_cs~data$time,ylim=c(min(data$t1_PM25_cs)-
+                                        0.1*rg,max(data$t1_PM25_cs)+0.1*rg))
+points(fitted(reslm)~data$time,col=4,lty=2) 
+
+```
+
+
+
+
+
+
+
+### 7.3.2. ts pm
+
+```{r}
+plot(pmts$PM25LE ~ pmts$fecha)
+
+
+
+### TEST https://stats.stackexchange.com/questions/60994/fit-a-sinusoidal-term-to-data
+pmts$time<-as.numeric(pmts$fecha-as.Date("2009-01-01"))
+summary(pmts$time)
+
+reslm <- gam(pmts$PM25LE ~ s(pmts$time, 5) +
+               sin(2*pi/365*pmts$time) +
+              cos(2*pi/365*pmts$time))
+summary(reslm)
+
+rg <- diff(range(pmts$PM25LE))
+plot(pmts$PM25LE ~ pmts$time,ylim=c(min(pmts$PM25LE)-
+                                        0.1*rg,max(pmts$PM25LE)+0.1*rg))
+points(fitted(reslm)~pmts$time,col=4,lty=2) 
+
+
+
+
+# Predict
+
+pr <- predict(reslm, type = "terms")
+summary(pr)
+class(pr)
+dim(pr)
+
+### Plots
+par(mfrow = c(1, 1), mar = c(3, 4, 3, 2) )
+plot(pr[, 1], type = "l", ylab = "Trend", main = "(a) long")
+
+
+
+
+
+### second harminic
+
+reslm <- gam(pmts$PM25LE ~ s(pmts$time, 5) +
+              sin(2*pi/365*pmts$time) +
+              cos(2*pi/365*pmts$time) +
+              sin(4*pi/365*pmts$time) +
+              cos(4*pi/365*pmts$time) 
+            )
+summary(reslm)
+
+rg <- diff(range(pmts$PM25LE))
+plot(pmts$PM25LE ~ pmts$time,ylim=c(min(pmts$PM25LE)-
+                                        0.1*rg,max(pmts$PM25LE)+0.1*rg))
+points(fitted(reslm)~pmts$time,col=4,lty=2) 
+
+
+
+
+# Predict
+
+pr <- predict(reslm, type = "terms")
+summary(pr)
+class(pr)
+dim(pr)
+
+### Plots
+par(mfrow = c(1, 1), mar = c(3, 4, 3, 2) )
+plot(pr[, 1], type = "l", ylab = "Trend", main = "(a) long")
+
+# Predicted seasonal
+plot(pr[,2]+pr[,3]+pr[,4]+pr[,5], type = "l", ylab = "Trend", main = "(b) seasonal")
+
+# All
+plot(pr[,1]+pr[,2]+pr[,3]+pr[,4]+pr[,5], type = "l", ylab = "Trend", main = "(c) All")
+
+
+```
+
