@@ -1,0 +1,81 @@
+---
+title: "3. CHECK MEQ"
+author: "Pablo Ruiz"
+format: 
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-expand: 2
+    theme: cosmo
+editor: visual
+---
+
+# Load libraries and functions
+
+```{r}
+source("0. Functions.R")
+
+```
+
+# 1. Load data
+
+```{r}
+load("Out/Bases2.RData")
+data<-basesf_all_nse
+
+```
+
+# 2. CHECK MEQ
+
+Intento de reproducir **analisis MEQ 231103.xls**. Se reproduce casi perfecto pero no igual. [**Revisar Ns, covariates y preeclampsia**]{style="color:red;"}.
+
+undefined
+
+```{r}
+
+### CHECK DATES FIN
+min(data$fechafin)
+max(data$fechafin)
+
+
+### CREATE FINAL SUBSET
+data<-data[data$fechafin>=as.Date("2010-01-01","%Y-%m-%d") &
+                  data$fechaini>=as.Date("2009-08-21","%Y-%m-%d") &
+                  data$fechaini<=as.Date("2016-03-05","%Y-%m-%d"), ]
+nrow(data)
+
+
+
+### CREA FORMULA PARA MODEL
+  formula <- "preclampsi  ~ age2 + t1_PM25_sp"
+
+  ### CREA MULTI LOGISTIC MODEL
+  
+  model <- glm(as.formula(formula), 
+               data = data, 
+               family = binomial)
+  print(summary(model))
+  
+  
+  
+  test<-HacerModeloLinea('preclampsi','t1_PM25_sp', 10, "age2", data)  
+  print(test)
+  
+  test2<-HacerModeloFull('preclampsi','t1_PM25_sp', 10, "age2", data)  
+  test2
+  
+  testage2<-HacerTabla('preclampsi',c('tot_PM25_sp','t1_PM25_sp','t2_PM25_sp',
+                                   't3_PM25_sp','w20_PM25_sp'), 
+                    10, "age2", data) 
+  testage2
+  
+  # M2
+  testm2<-HacerTabla('preclampsi',c('tot_PM25_sp','t1_PM25_sp','t2_PM25_sp',
+                                   't3_PM25_sp','w20_PM25_sp'), 
+                    10, "age2+bmi_1", data) 
+  testm2
+  
+  
+
+```

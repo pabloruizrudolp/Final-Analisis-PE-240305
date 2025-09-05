@@ -1,0 +1,270 @@
+---
+title: "3. CHECK MEQ"
+author: "Pablo Ruiz"
+format: 
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-expand: 2
+    theme: cosmo
+editor: visual
+---
+
+# Load libraries and functions
+
+```{r}
+#| output: false
+
+library(lubridate)
+library(splines)
+library(plyr)
+source("0. Functions.R")
+
+```
+
+# 1. Load data
+
+```{r}
+load("Out/Bases2.RData")
+data<-basesf_all_nse
+
+```
+
+# 2. Create time subsets
+
+```{r}
+### CREATE FINAL SUBSET
+#data<-data[data$fechaini>=as.Date("2010-01-01","%Y-%m-%d") &
+#                  data$fechaini<=as.Date("2015-12-31","%Y-%m-%d"), ]
+#nrow(data)
+
+```
+
+# 3. Check N by year
+
+```{r}
+### redo year
+data$year_concep2<-lubridate::year(data$fechaini)
+
+### N by year
+
+table(data$year_concep, exclude=NULL)
+table(data$year_concep2, exclude=NULL)
+table(data$year_concep2, data$year_concep)
+
+
+```
+
+# 4. Plot time prevalences and cases
+
+Here create set by time
+
+```{r}
+#| warning: false
+
+
+#################### target sets
+
+### WEEKS
+dfwk <- data.frame(dateini=seq(as.Date("2009-01-01"),
+                                  as.Date("2016-12-31"),"week") )
+dfwk$datefin<-Hmisc::Lag(dfwk$dateini, -1)-1
+dfwk<-dfwk[complete.cases(dfwk),]
+class(dfwk)
+sapply(dfwk, class)
+
+### MONTHS
+dfmo <- data.frame(dateini=seq(as.Date("2009-01-01"),
+                                  as.Date("2016-12-31"),"month") )
+dfmo$datefin<-Hmisc::Lag(dfmo$dateini, -1)-1
+  
+### QUARTER
+dfqt <- data.frame(dateini=seq(as.Date("2009-01-01"),
+                                  as.Date("2016-12-31"),"3 month") )
+dfqt$datefin<-Hmisc::Lag(dfqt$dateini, -1)-1
+
+
+
+
+###################### get mean functions
+
+GetMean<-function(dateini, dateend, var)
+{
+  value<-mean(na.omit(data[data$fechaini>=dateini & data$fechaini<=dateend, var]))
+  return(value)
+}
+
+GetMeanFin<-function(dateini, dateend, var)
+{
+  value<-mean(na.omit(data[data$fechafin>=dateini & data$fechafin<=dateend, var]))
+  value<-ifelse(is.na(value),0,value)
+  return(value)
+}
+
+
+
+GetLength<-function(dateini, dateend, var)
+{
+  value<-length(na.omit(data[data$fechaini>=dateini & data$fechaini<=dateend, var]))
+  return(value)
+}
+
+GetMean(dfwk$dateini[1], dfwk$datefin[1],"preclampsi")
+GetMeanFin(dfwk$dateini[1], dfwk$datefin[1],"preclampsi")
+GetLength(dfwk$dateini[1], dfwk$datefin[1],"preclampsi")
+
+
+
+
+########### Get prevalences and n
+
+# by week
+dfwk$pe_p<-mapply(GetMean, dfwk$dateini, dfwk$datefin, "preclampsi")
+dfwk$pe_n<-mapply(GetLength, dfwk$dateini, dfwk$datefin, "preclampsi")
+
+# by mo
+dfmo$pe_p<-mapply(GetMean, dfmo$dateini, dfmo$datefin, "preclampsi")
+dfmo$pe_n<-mapply(GetLength, dfmo$dateini, dfmo$datefin, "preclampsi")
+dfmo$pe_p_fin<-mapply(GetMeanFin, dfmo$dateini, dfmo$datefin, "preclampsi")
+
+# by qt
+dfqt$pe_p<-mapply(GetMean, dfqt$dateini, dfqt$datefin, "preclampsi")
+dfqt$pe_p_fin<-mapply(GetMeanFin, dfqt$dateini, dfqt$datefin, "preclampsi")
+dfqt$pe_n<-mapply(GetLength, dfqt$dateini, dfqt$datefin, "preclampsi")
+
+
+
+########### PLots
+
+plot(dfwk$pe_p ~ dfwk$dateini, main="Prevalence PE by week")
+plot(dfwk$pe_n ~ dfwk$dateini, main="N partos by week")
+
+plot(dfmo$pe_p ~ dfmo$dateini, main="Prevalence PE by mo")
+plot(dfmo$pe_p_fin ~ dfmo$dateini, main="Prevalence PE by mo fin", ylim=c(0,0.1) )
+plot(dfmo$pe_n ~ dfmo$dateini, main="N partos by mo")
+
+plot(dfqt$pe_p ~ dfqt$dateini, main="Prevalence PE by qt")
+plot(dfqt$pe_p_fin ~ dfqt$dateini, main="Prevalence PE by qt fin" , ylim=c(0,0.1))
+plot(dfqt$pe_n ~ dfqt$dateini, main="N partos by qt")
+
+
+```
+
+# 4. Year effect
+
+```{r}
+### CREATE FINAL SUBSET
+
+  modyears<-HacerModelo1Cov('preclampsi',"as.factor(year_concep)", data)
+  summary(modyears)
+  
+  modyears<-HacerModeloFull1Cov('preclampsi',"as.factor(year_concep)", data)
+  modyears
+
+```
+
+# 5. Time effects splines and knots
+
+## 5.1 splines
+
+```{r}
+### SEE SPLINES AND KNOTS ON PE .... PENG page 27
+
+  ### MANUAL
+
+  modspline<-glm(preclampsi ~ ns(fechaini, 4), 
+               data = data, 
+               family = binomial)
+  summary(modspline)
+  # plot(modspline)
+  
+  # make seq
+  x <- seq(as.Date("2010-01-01"), as.Date("2015-12-31"),"day")
+  plot(x, exp(predict(modspline, data.frame(fechaini = x))), ylab = "PE %",
+  main = "Splines", cex = 0.8)
+  
+  
+  
+  ### WITH FUNCTIONS
+  
+  ModelSpline(4)
+  ModelSpline(5)
+  ModelSpline(6)
+  ModelSpline(7)
+  ModelSpline(12)
+  ModelSpline(14)
+  ModelSpline(30)
+  
+```
+
+## 5.2 Knots
+
+```{r}
+  
+  
+  ##### TRY KNOTS
+  
+  knots<-seq(as.Date("2010-03-01"), as.Date("2015-12-31"),"year")
+  modspline<-glm(preclampsi ~ ns(fechaini, knots=knots), 
+               data = data, 
+               family = binomial)
+  summary(modspline)
+  #plot(modspline)
+  
+  # make seq
+  x <- seq(as.Date("2010-01-01"), as.Date("2015-12-31"),"day")
+  plot(x, exp(predict(modspline, data.frame(fechaini = x))), ylab = "PE %",
+  main = "Knots", cex = 0.8)
+  
+  
+  # year
+  ModelKnots(knots, "year")
+  
+  #6 months
+  knots<-seq(as.Date("2010-03-01"), as.Date("2015-12-31"),182.5)
+  ModelKnots(knots, "6m") 
+    
+
+```
+
+# 6. Test sin cosine
+
+```{r}
+plot(data$t1_PM25_cs ~ data$fechaini)
+
+
+
+### TEST https://stats.stackexchange.com/questions/60994/fit-a-sinusoidal-term-to-data
+data$time<-as.numeric(data$fechaini-as.Date("2010-01-01"))
+summary(data$time)
+reslm <- lm(data$t1_PM25_cs ~ sin(2*pi/365*data$time) +
+              cos(2*pi/365*data$time))
+summary(reslm)
+
+rg <- diff(range(data$t1_PM25_cs))
+plot(data$t1_PM25_cs~data$time,ylim=c(min(data$t1_PM25_cs)-
+                                        0.1*rg,max(data$t1_PM25_cs)+0.1*rg))
+points(fitted(reslm)~data$time,col=4,lty=2) 
+
+
+
+
+
+### second harminic
+data$time<-as.numeric(data$fechaini-as.Date("2010-01-01"))
+summary(data$time)
+reslm <- lm(data$t1_PM25_cs ~ 
+              sin(2*pi/365*data$time) +
+              cos(2*pi/365*data$time) +
+              sin(4*pi/365*data$time) +
+              cos(4*pi/365*data$time) 
+            )
+summary(reslm)
+
+rg <- diff(range(data$t1_PM25_cs))
+plot(data$t1_PM25_cs~data$time,ylim=c(min(data$t1_PM25_cs)-
+                                        0.1*rg,max(data$t1_PM25_cs)+0.1*rg))
+points(fitted(reslm)~data$time,col=4,lty=2) 
+
+```

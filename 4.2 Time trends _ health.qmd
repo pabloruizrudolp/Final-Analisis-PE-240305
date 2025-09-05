@@ -1,0 +1,734 @@
+---
+title: "4.2. PE TIME TRENDS"
+author: "Pablo Ruiz"
+format: 
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-expand: 2
+    theme: cosmo
+editor: visual
+---
+
+# Load libraries and functions
+
+```{r}
+#| output: false
+
+library(lubridate)
+library(splines)
+library(plyr)
+library(flextable)
+source("0. Functions.R")
+
+```
+
+# 1. Load data
+
+```{r}
+load("Out/Bases2.RData")
+data<-basesf_all_nse
+
+```
+
+# 2. Create time subsets
+
+Usar este subset al final
+
+```{r}
+### CREATE FINAL SUBSET
+data2<-basesf_all_nse[basesf_all_nse$fechaini>=as.Date("2010-01-01","%Y-%m-%d") &
+                  basesf_all_nse$fechaini<=as.Date("2015-12-31","%Y-%m-%d"), ]
+nrow(data2)
+
+```
+
+# 3. Check N by year
+
+```{r}
+### redo year
+data$year_concep2<-lubridate::year(data$fechaini)
+
+### N by year
+
+table(data$year_concep, exclude=NULL)
+table(data$year_concep2, exclude=NULL)
+table(data$year_concep2, data$year_concep)
+
+summary(data$fechaini)
+summary(data$fechafin )
+
+
+```
+
+# 4. Create time-series (ts). Calculate N, cases and prevalence per day
+
+Aquí vamos a crear un set (**ts**) que sea un time-series de los N, casos y prevalencias
+
+```{r}
+#| warning: false
+
+
+#### CREAR MOLDE
+
+ts <- data.frame(fechaini=seq(as.Date("2008-01-01"),
+                                  as.Date("2016-12-31"),"day") )
+
+
+### COLLAPSE by date
+
+table(data$preclampsi, exclude=NULL)
+
+casos<-ddply(data, .(fechaini), summarise,
+          N=length(na.omit(preclampsi)),
+          pe=sum(na.omit(preclampsi)),
+          ppe=pe/N
+          )
+
+
+### MERGE CON MOLDE
+
+ts<-merge(ts, casos, by="fechaini", all.x=T)
+
+summary(ts)
+
+
+
+### FILL NAs with 0s
+
+ts$N<-ifelse(is.na(ts$N), 0, ts$N)
+ts$pe<-ifelse(is.na(ts$pe), 0, ts$pe)
+ts$ppe<-ifelse(is.na(ts$ppe), 0, ts$ppe)
+
+summary(ts)
+
+
+
+```
+
+Aquí vamos a crear un set (**ts**) que sea un time-series de los N, casos y prevalencias **por fecha fin**.
+
+```{r}
+#| warning: false
+
+
+#### CREAR MOLDE
+
+tsfin <- data.frame(fechafin=seq(as.Date("2008-01-01"),
+                                  as.Date("2016-12-31"),"day") )
+
+
+### COLLAPSE by date
+
+table(data$preclampsi, exclude=NULL)
+
+casos<-ddply(data, .(fechafin), summarise,
+          N=length(na.omit(preclampsi)),
+          pe=sum(na.omit(preclampsi)),
+          ppe=pe/N
+          )
+
+
+### MERGE CON MOLDE
+
+tsfin<-merge(tsfin, casos, by="fechafin", all.x=T)
+
+summary(tsfin)
+
+
+
+### FILL NAs with 0s
+
+tsfin$N<-ifelse(is.na(tsfin$N), 0, tsfin$N)
+tsfin$pe<-ifelse(is.na(tsfin$pe), 0, tsfin$pe)
+tsfin$ppe<-ifelse(is.na(tsfin$ppe), 0, tsfin$ppe)
+
+summary(tsfin)
+
+
+
+```
+
+# 5. Plot time series using *filter*
+
+## 5.1 Plot Ns
+
+**FUNCTION**
+
+```{r}
+
+years<-seq(as.Date("2008-01-01"), as.Date("2019-01-01"),"years")
+
+HacerPlot<-function(data, var, covar, ylab, ymax, main)
+{
+  plot(data[,var] ~ data[,covar], cex=0.6, ylim=c(0,ymax), 
+       ylab=ylab, xlab="Fecha", xaxt="n", main=main)
+  abline(v=years, lwd=0.5, lty=2, col="lightblue")
+  axis(1, years, format(years, "%Y"), cex.axis = .7)
+
+}
+
+
+```
+
+**FECHA INI DESPUES FIN**
+
+```{r}
+
+HacerPlot(ts, "N","fechaini","N per 1 day",15, "ini")
+HacerPlot(tsfin, "N","fechafin","N per 1 day",15, "fin")
+
+ts$N7<-filter(ts$N, rep((1/7),7))
+tsfin$N7<-filter(tsfin$N, rep((1/7),7))
+HacerPlot(ts, "N7","fechaini","N per 7 day",10, "ini")
+HacerPlot(tsfin, "N7","fechafin","N per 7 day",10, "fin")
+
+
+ts$N30<-filter(ts$N, rep((1/30),30))
+tsfin$N30<-filter(tsfin$N, rep((1/30),30))
+HacerPlot(ts, "N30","fechaini","N per 30 day",10, "ini")
+HacerPlot(tsfin, "N30","fechafin","N per 30 day",10, "fin")
+
+
+ts$N90<-filter(ts$N, rep((1/90),90))
+tsfin$N90<-filter(tsfin$N, rep((1/90),90))
+HacerPlot(ts, "N90","fechaini","N per 90 day",10, "ini")
+HacerPlot(tsfin, "N90","fechafin","N per 90 day",10, "fin")
+
+
+ts$N365<-filter(ts$N, rep((1/365),365))
+tsfin$N365<-filter(tsfin$N, rep((1/365),365))
+HacerPlot(ts, "N365","fechaini","N per 365 day",10, "ini")
+HacerPlot(tsfin, "N365","fechafin","N per 365 day",10, "fin")
+
+
+
+```
+
+## 5.2 Plot PE cases
+
+```{r}
+
+HacerPlot(ts, "pe","fechaini","PE cases per 1 day",5, "ini")
+HacerPlot(tsfin, "pe","fechafin","PE cases per 1 day",5, "fin")
+
+ts$pe7<-filter(ts$pe, rep((1/7),7))
+tsfin$pe7<-filter(tsfin$pe, rep((1/7),7))
+HacerPlot(ts, "pe7","fechaini","PE cases per 7 day",3, "ini")
+HacerPlot(tsfin, "pe7","fechafin","PE cases per 7 day",3, "fin")
+
+
+ts$pe30<-filter(ts$pe, rep((1/30),30))
+tsfin$pe30<-filter(tsfin$pe, rep((1/30),30))
+HacerPlot(ts, "pe30","fechaini","PE cases per 30 day",1, "ini")
+HacerPlot(tsfin, "pe30","fechafin","PE cases per 30 day",1, "fin")
+
+
+ts$pe90<-filter(ts$pe, rep((1/90),90))
+tsfin$pe90<-filter(tsfin$pe, rep((1/90),90))
+HacerPlot(ts, "pe90","fechaini","PE cases per 90 day",0.5, "ini")
+HacerPlot(tsfin, "pe90","fechafin","PE cases per 90 day",0.5, "fin")
+
+
+
+ts$pe365<-filter(ts$pe, rep((1/365),365))
+tsfin$pe365<-filter(tsfin$pe, rep((1/365),365))
+HacerPlot(ts, "pe90","fechaini","PE cases per 365 day",0.5, "ini")
+HacerPlot(tsfin, "pe90","fechafin","PE cases per 365 day",0.5, "fin")
+
+
+ts$pe730<-filter(ts$pe, rep((1/730),730))
+tsfin$pe730<-filter(tsfin$pe, rep((1/730),730))
+HacerPlot(ts, "pe730","fechaini","PE cases per 730 day",0.5, "ini")
+HacerPlot(tsfin, "pe730","fechafin","PE cases per 730 day",0.5, "fin")
+
+
+
+ts$pe1095<-filter(ts$pe, rep((1/1095),1095))
+tsfin$pe1095<-filter(tsfin$pe, rep((1/1095),1095))
+HacerPlot(ts, "pe1095","fechaini","PE cases per 1095 day",0.5, "ini")
+HacerPlot(tsfin, "pe1095","fechafin","PE cases per 1095 day",0.5, "fin")
+
+
+```
+
+## 5.3 Plot PE prevalence
+
+```{r}
+
+
+
+HacerPlot(ts, "ppe","fechaini","PE prev 1 day filter",1, "ini")
+HacerPlot(tsfin, "ppe","fechafin","PE prev 1 day filter",1, "fin")
+
+
+ts$ppe7<-filter(ts$ppe, rep((1/7),7))
+tsfin$ppe7<-filter(tsfin$ppe, rep((1/7),7))
+HacerPlot(ts, "ppe7","fechaini","PE prev 7 day filter", 1, "ini")
+HacerPlot(tsfin, "ppe7","fechafin","PE prev 7 day filter",1, "fin")
+
+ts$ppe30<-filter(ts$ppe, rep((1/30),30))
+tsfin$ppe30<-filter(tsfin$ppe, rep((1/30),30))
+HacerPlot(ts, "ppe30","fechaini","PE prev 30 day filter", 0.08, "ini")
+HacerPlot(tsfin, "ppe30","fechafin","PE prev 30 day filter",0.08, "fin")
+
+
+ts$ppe90<-filter(ts$ppe, rep((1/90),90))
+tsfin$ppe90<-filter(tsfin$ppe, rep((1/90),90))
+HacerPlot(ts, "ppe90","fechaini","PE prev 90 day filter", 0.08, "ini")
+HacerPlot(tsfin, "ppe90","fechafin","PE prev 90 day filter",0.08, "fin")
+
+
+ts$ppe365<-filter(ts$ppe, rep((1/365),365))
+tsfin$ppe365<-filter(tsfin$ppe, rep((1/365),365))
+HacerPlot(ts, "ppe365","fechaini","PE prev 365 day filter", 0.08, "ini")
+HacerPlot(tsfin, "ppe365","fechafin","PE prev 365 day filter",0.08, "fin")
+
+
+ts$ppe700<-filter(ts$ppe, rep((1/700),700))
+tsfin$ppe700<-filter(tsfin$ppe, rep((1/700),700))
+HacerPlot(ts, "ppe700","fechaini","PE prev 700 day filter", 0.08, "ini")
+HacerPlot(tsfin, "ppe700","fechafin","PE prev 700 day filter",0.08, "fin")
+
+
+ts$ppe1095<-filter(ts$ppe, rep((1/1095),1095))
+tsfin$ppe1095<-filter(tsfin$ppe, rep((1/1095),1095))
+HacerPlot(ts, "ppe1095","fechaini","PE prev 1095 day filter", 0.08, "ini")
+HacerPlot(tsfin, "ppe1095","fechafin","PE prev 1095 day filter",0.08, "fin")
+
+```
+
+## 5.4 Prevalences by year
+
+```{r}
+
+prev<-ddply(data, .(year_concep), summarise,
+          N=length(na.omit(preclampsi)),
+          PE=sum(na.omit(preclampsi)),
+          PPE=PE/N )
+
+flextable(prev)
+```
+
+# 6. Autocorrelación (Peng p.49)
+
+```{r}
+
+# Autocorrelación simple
+acf(ts$N, lag.max = 180, main = "Autocorrelación: N: ini", ci.col = "black")
+acf(tsfin$N, lag.max = 180, main = "Autocorrelación: N: fin", ci.col = "black")
+acf(ts$pe, lag.max = 180, main = "Autocorrelación: PE cases: ini", ci.col = "black")
+acf(tsfin$pe, lag.max = 180, main = "Autocorrelación: PE cases: fin", ci.col = "black")
+acf(ts$ppe, lag.max = 180, main = "Autocorrelación: PE prev: ini", ci.col = "black")
+acf(tsfin$ppe, lag.max = 180, main = "Autocorrelación: PE prev: fin", ci.col = "black")
+
+
+```
+
+# 7. Simple linear model on ts
+
+```{r}
+
+model<-lm(N ~ fechaini, ts)
+summary(model)
+
+model<-lm(N ~ fechafin, tsfin)
+summary(model)
+
+
+model<-lm(pe ~ fechaini, ts)
+summary(model)
+
+model<-lm(pe ~ fechafin, tsfin)
+summary(model)
+
+
+model<-lm(ppe ~ fechaini, ts)
+summary(model)
+
+model<-lm(ppe ~ fechafin, tsfin)
+summary(model)
+```
+
+# 8. Time decomposition
+
+## 8.1 using filters (Peng p. 50)
+
+```{r, fig.height=6}
+
+HacerTS<-function(data, var)
+{
+  ### Get DATA
+  ts<-data
+  ts$N<-ts[,var]
+  
+  
+  ### Filter year
+ts$N_y <-stats::filter(ts$N, rep(1/365, 365))
+ts$N_ry<-ts$N-ts$N_y
+ts$N_s <-filter(ts$N_ry, rep(1/90, 90))
+ts$N_rs<-ts$N_ry-ts$N_s
+ts$N_w <- filter(ts$N_rs, rep(1/7, 7))
+ts$N_r <- ts$N_rs-ts$N_w
+
+model <- lm(ts$N ~ ts$N_y + ts$N_s + ts$N_w + ts$N_r)
+summary(model)
+
+pr <- predict(model, type = "terms")
+summary(pr)
+class(pr)
+dim(pr)
+
+par(mfrow = c(4, 1), mar = c(3, 4, 3, 2) )
+plot(pr[, 1], type = "l", ylab = "Trend", main = "(a) yearly")
+plot(pr[, 2], type = "l", ylab = "Trend", main = "(b) 90 days")
+plot(pr[, 3], type = "l", ylab = "Trend", main = "(c) weekly")
+plot(pr[, 4], type = "l", ylab = "Trend", main = "(d) resid")
+
+par(mfrow = c(4, 1), mar = c(3, 4, 3, 2) )
+acf(pr[,1], lag.max = 50, main = "Autocorrelation year", ci.col = "black")
+acf(pr[,2], lag.max = 50, main = "Autocorrelation 90d", ci.col = "black")
+acf(pr[,3], lag.max = 50, main = "Autocorrelation weekly", ci.col = "black")
+acf(pr[,4], lag.max = 50, main = "Autocorrelation resid", ci.col = "black")
+}
+
+
+
+## HACER
+HacerTS(ts, "N")
+HacerTS(tsfin, "N")
+
+HacerTS(ts, "pe")
+HacerTS(tsfin, "pe")
+
+HacerTS(ts, "ppe")
+HacerTS(tsfin, "ppe")
+
+```
+
+## 8.2 using TS function (Peng p. 54)
+
+```{r}
+### library
+library(tsModel)
+
+
+  
+  
+### Functions
+
+HacerPlot<-function(data, var, covar, ylab, main)
+{
+  plot(data[,var] ~ data[,covar], cex=0.6, 
+       ylab=ylab, xlab="Fecha", xaxt="n", main=main)
+  abline(v=years, lwd=0.5, lty=2, col="lightblue")
+  axis(1, years, format(years, "%Y"), cex.axis = .7)
+
+}
+
+
+HacerTSM<-function(data, time, var)
+{
+      ### Get DATA
+    ts<-data
+    ts$N<-ts[,var]
+    ts$time<-ts[,time]
+  
+    ### Decomposition
+    poll.dc <- tsdecomp(ts$N, c(1, 2, 10, 3288))
+    class(poll.dc)
+    head(poll.dc)
+    summary(poll.dc)
+    dim(poll.dc)
+    
+    ### Plots
+    par(mfrow = c(3, 1), mar = c(3, 4, 3, 2) + 0.1)
+    
+    ts$trend<-poll.dc[, 1]
+    HacerPlot(ts, "trend", "time", "Time", "a) Trend")
+    ts$trend<-poll.dc[, 2]
+    HacerPlot(ts, "trend", "time", "Time", "b) Seasonal")
+    ts$trend<-poll.dc[, 3]
+    HacerPlot(ts, "trend", "time", "Time", "c) Residual")
+    
+    ### ACF
+    
+    par(mfrow = c(3, 1), mar = c(3, 4, 3, 2) + 0.1)
+    acf(poll.dc[, 1], lag.max = 50, main = "Autocorr trend", ci.col = "black")
+    acf(poll.dc[, 2], lag.max = 50, main = "Autocorr seasonal", ci.col = "black")
+    acf(poll.dc[, 3], lag.max = 50, main = "Autocorr residual", ci.col = "black")
+  }
+
+
+## HACER
+HacerTSM(ts, "fechaini", "N")
+HacerTSM(tsfin, "fechafin", "N")
+
+HacerTSM(ts, "fechaini", "pe")
+HacerTSM(tsfin, "fechafin", "pe")
+
+HacerTSM(ts, "fechaini", "ppe")
+HacerTSM(tsfin, "fechafin", "ppe")
+
+
+
+```
+
+# 9. Smoothing for time-series (Peng p.68)
+
+## 9.1 Only one smooth
+
+```{r}
+#| warning: false
+
+library(gam)
+
+### FUNCTION MODEL WITH GAM
+
+HacerUnSmooth<-function( data, var, fecha, ymax)
+{
+  #data
+  ts<-data
+  ts$N<-ts[,var]
+  ts$fechaini<-ts[,fecha]
+  
+  #models
+  model1 <- gam(ts$N ~ s(fechaini, 4), data = ts)
+  ts$pr1 <- predict(model1, ts)
+  
+  model2 <- gam(ts$N ~ s(fechaini, 5), data = ts)
+  ts$pr2 <- predict(model2, ts)
+  
+  model3 <- gam(ts$N ~ s(fechaini, 6), data = ts)
+  ts$pr3 <- predict(model3, ts)
+  
+  model4 <- gam(ts$N ~ s(fechaini, 7), data = ts)
+  ts$pr4 <- predict(model4, ts)
+  
+  model5 <- gam(ts$N ~ s(fechaini, 8), data = ts)
+  ts$pr5 <- predict(model5, ts)
+  
+  model6 <- gam(ts$N ~ s(fechaini, 8 * 2), data = ts)
+  ts$pr6 <- predict(model6, ts)
+  
+  model7 <- gam(ts$N ~ s(fechaini, 8 * 3), data = ts)
+  ts$pr7 <- predict(model7, ts)
+  
+  model8 <- gam(ts$N ~ s(fechaini, 8 * 4), data = ts)
+  ts$pr8 <- predict(model8, ts)
+  
+  # plot
+  par(mar = c(2, 4, 0, 0))
+  plot(N ~ fechaini, ylab = paste(var,fecha), cex = 0.8, 
+       ylim=c(0,ymax), data=ts)
+  lines(ts$fechaini, ts$pr1, col="yellow2", lwd=4)
+  lines(ts$fechaini, ts$pr2, col="orange", lwd=3)
+  lines(ts$fechaini, ts$pr3, col="red",lwd=3)
+  lines(ts$fechaini, ts$pr4, col="blue4",lwd=2)
+  lines(ts$fechaini, ts$pr5, col="purple2", lwd=2)
+  lines(ts$fechaini, ts$pr6, col="orange2", lwd=2)
+  lines(ts$fechaini, ts$pr7, col="darkred", lwd=2)
+
+}
+
+HacerUnSmooth(ts,"N","fechaini",20)
+HacerUnSmooth(tsfin,"N","fechafin",20)
+
+HacerUnSmooth(ts,"pe","fechaini",1)
+HacerUnSmooth(tsfin,"pe","fechafin",1)
+
+HacerUnSmooth(ts,"ppe","fechaini",0.2)
+HacerUnSmooth(tsfin,"ppe","fechafin",0.2)
+
+
+```
+
+## 9.2 Two smooths
+
+```{r}
+#| warning: false
+
+library(gam)
+
+### FUNCTION MODEL WITH GAM
+
+HacerDosSmooth<-function( data, var, fecha, df1, df2)
+{
+  #data
+  ts<-data
+  ts$N<-ts[,var]
+  ts$fechaini<-ts[,fecha]
+  
+  #models
+  model1 <- gam(ts$N ~ s(fechaini, df1) + s(fechaini, df2), data = ts)
+  print(model)
+
+  pr <- predict(model1, type="terms")
+  summary(pr)
+
+  ts$pr1<-pr[,1]
+  ts$pr2<-pr[,2]
+
+  # plot
+  par(mar = c(2, 4, 0, 0))
+  years<-seq(as.Date("2008-01-01"), as.Date("2019-01-01"),"years")
+  
+  plot(ts$fechaini, ts$pr1, col="orange", lwd=2, type="l", xaxt="n")
+  abline(v=years, lwd=0.5, lty=2, col="lightblue")
+  axis(1, years, format(years, "%Y"), cex.axis = .7)
+  
+  plot(ts$fechaini, ts$pr2, col="blue", lwd=2, type="l", xaxt="n")
+  abline(v=years, lwd=0.5, lty=2, col="lightblue")
+  axis(1, years, format(years, "%Y"), cex.axis = .7)
+
+}
+
+
+HacerDosSmooth(ts,"N","fechaini",9, 9*2)
+HacerDosSmooth(tsfin,"N","fechafin",9, 9*2)
+
+HacerDosSmooth(ts,"pe","fechaini",9, 9*2)
+HacerDosSmooth(tsfin,"pe","fechafin",9, 9*2)
+
+HacerDosSmooth(ts,"ppe","fechaini",9, 9*2)
+HacerDosSmooth(tsfin,"ppe","fechafin",9, 9*2)
+
+```
+
+## 9.3 Smooth and sin cosine
+
+```{r}
+#| warning: false
+
+library(gam)
+
+HacerLongSin<-function(data, var, time, df)
+{
+  # data
+  data<-data
+  data$var<-data[,var]
+  data$time<-data[,time]
+  data$time<-as.numeric(data$time-as.Date("2008-01-01"))
+  
+  # model
+  model <- gam(data$var ~ s(data$time, df) +
+                 sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time))
+  print(model)
+  #print(summary(model))
+  #print(summary(model)$coefficients)
+  
+  
+  # plot model
+  plot(fitted(model)~data$time,col=4,lty=2) 
+  points(data$var ~ data$time)
+  
+  # plot Predict
+  pr <- predict(model, type = "terms")
+  #print(summary(pr))
+  print(paste("Suma:",sum(abs(pr[,2]+pr[,3]))))
+  print(paste("Range:",max((pr[,2]+pr[,3])) - min((pr[,2]+pr[,3])) ))
+  
+    
+  ### Plots
+  par(mfrow = c(1, 1), mar = c(3, 4, 3, 2) )
+  plot(pr[, 1], type = "l", ylab = "Trend", main = "long and sine cosine")
+  lines(pr[, 2]+pr[, 3], type = "l", ylab = "Trend", col="blue")
+}
+
+
+HacerLongSin(ts, "N","fechaini",6)
+HacerLongSin(tsfin, "N","fechafin",6)
+
+HacerLongSin(ts, "pe","fechaini",6)
+HacerLongSin(tsfin, "pe","fechafin",6)
+
+
+HacerLongSin(ts, "ppe","fechaini",4)
+HacerLongSin(tsfin, "ppe","fechafin",4)
+
+HacerLongSin(ts, "ppe","fechaini",6)
+HacerLongSin(tsfin, "ppe","fechafin",6)
+
+HacerLongSin(ts, "ppe","fechaini",8)
+HacerLongSin(tsfin, "ppe","fechafin",8)
+
+HacerLongSin(ts, "ppe","fechaini",10)
+HacerLongSin(tsfin, "ppe","fechafin",10)
+
+HacerLongSin(ts, "ppe","fechaini",12)
+HacerLongSin(tsfin, "ppe","fechafin",12)
+```
+
+# 10. Model preclampsi in base
+
+## 10.1 Model sin cosin using bs
+
+```{r}
+#| warning: false
+
+library(gam)
+data<-as.data.frame(basesf_all_nse)
+data$time<-as.numeric(data$fechaini-as.Date("2008-01-01"))
+model <- gam::gam(data$preclampsi ~ 
+                s(data$time, df=3) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time),
+                family=binomial,
+                na.action = na.exclude)
+
+summary(model)
+
+HacerLongSinMGCV<-function(data, var, time, df)
+{
+  # data
+  data<-as.data.frame(data)
+  data$var<-data[,var]
+  data$time<-data[,time]
+  data$time<-as.numeric(data$time-as.Date("2008-01-01"))
+  
+  # model
+  model <- gam::gam(data$var ~ 
+                  s(data$time, df=df) +
+                  sin(2*pi/365*data$time) +
+                  cos(2*pi/365*data$time),
+                  family=binomial,
+                  na.action = na.exclude)
+  
+  print(model)
+  
+  modelex<-gam.exact(model)
+  print(modelex$coefficients)
+
+  
+  
+  # plot model
+  plot(fitted(model)~data$time,col=4,lty=2) 
+ 
+  # plot Predict
+  pr <- predict(model, type = "terms")
+  print(summary(pr))
+  print(paste("Suma:",sum(abs(pr[,2]+pr[,3]))))
+  print(paste("Range:",max((pr[,2]+pr[,3])) - min((pr[,2]+pr[,3])) ))
+  
+    
+  ### Plots
+  par(mfrow = c(1, 1), mar = c(3, 4, 3, 2) )
+  plot(pr[, 2]+pr[, 3] ~ data$time, ylab = "Trend", main = "long and sine cosine")
+  points(pr[, 1] ~ data$time, ylab = "Trend", col="blue")
+}
+
+
+HacerLongSinMGCV(basesf_all_nse, "preclampsi","fechaini",2)
+HacerLongSinMGCV(basesf_all_nse, "preclampsi","fechaini",3)
+HacerLongSinMGCV(basesf_all_nse, "preclampsi","fechaini",4)
+
+HacerLongSinMGCV(data2, "preclampsi","fechaini",1)
+HacerLongSinMGCV(data2, "preclampsi","fechaini",2)
+HacerLongSinMGCV(data2, "preclampsi","fechaini",3)
+HacerLongSinMGCV(data2, "preclampsi","fechaini",4)
+HacerLongSinMGCV(data2, "preclampsi","fechaini",5)
+HacerLongSinMGCV(data2, "preclampsi","fechaini",6)
+
+```

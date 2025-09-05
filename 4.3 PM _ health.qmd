@@ -1,0 +1,919 @@
+---
+title: "4.3. PM and PE Models"
+author: "Pablo Ruiz"
+format: 
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-expand: 2
+    theme: cosmo
+editor: visual
+---
+
+# Load libraries and functions
+
+```{r}
+#| output: false
+
+library(lubridate)
+library(gam)
+library(splines)
+library(plyr)
+library(flextable)
+#source("0. Functions.R")
+
+```
+
+# 1. Load data
+
+```{r}
+load("Out/Bases2.RData")
+
+
+```
+
+# 2. Create time subsets
+
+Usar este subset al final
+
+```{r}
+
+### CHECK DATES
+summary(basesf_all_nse$fechaini)
+summary(basesf_all_nse$fechafin)
+
+### CREATE FINAL SUBSET (STRAND USING 2010-2016)
+data<-basesf_all_nse[basesf_all_nse$fechafin>=as.Date("2010-01-01","%Y-%m-%d") &
+                  basesf_all_nse$fechaini>=as.Date("2009-08-21","%Y-%m-%d") &
+                  basesf_all_nse$fechaini<=as.Date("2016-03-05","%Y-%m-%d"), ]
+nrow(data)
+summary(data$fechaini)
+summary(data$fechafin)
+
+### CREATE DATA2 (STRIC STRAND)STRAND 2009-2016, POR QUÉ NO USAR 2009? DATA PM?)
+data2<-basesf_all_nse[basesf_all_nse$fechafin>=as.Date("2009-01-01","%Y-%m-%d") &
+                  basesf_all_nse$fechaini>=as.Date("2008-08-21","%Y-%m-%d") &
+                  basesf_all_nse$fechaini<=as.Date("2016-03-05","%Y-%m-%d"), ]
+nrow(data2)
+summary(data2$fechaini)
+summary(data2$fechafin)
+
+```
+
+# 3. Model preclampsi in base
+
+## 3.1 Model sin cosin using bs
+
+```{r}
+#| warning: false
+
+library(gam)
+data<-as.data.frame(data)
+data$time<-as.numeric(data$fechaini-as.Date("2009-01-01"))
+model <- gam::gam(data$preclampsi ~ 
+                s(data$time, df=3) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time),
+                family=binomial,
+                na.action = na.exclude)
+
+summary(model)
+
+HacerLongSinMGCV<-function(data, var, time, df)
+{
+  # data
+  data<-as.data.frame(data)
+  data$var<-data[,var]
+  data$time<-data[,time]
+  data$time<-as.numeric(data$time-as.Date("2009-01-01"))
+  
+  # model
+  model <- gam::gam(data$var ~ 
+                  s(data$time, df=df) +
+                  sin(2*pi/365*data$time) +
+                  cos(2*pi/365*data$time),
+                  family=binomial,
+                  na.action = na.exclude)
+  
+  print(model)
+  
+  modelex<-gam.exact(model)
+  print(modelex$coefficients)
+
+  
+  
+  # plot model
+  plot(fitted(model)~data$time,col=4,lty=2) 
+ 
+  # plot Predict
+  pr <- predict(model, type = "terms")
+  print(summary(pr))
+  print(paste("Suma:",sum(abs(pr[,2]+pr[,3]))))
+  print(paste("Range:",max((pr[,2]+pr[,3])) - min((pr[,2]+pr[,3])) ))
+  
+    
+  ### Plots
+  par(mfrow = c(1, 1), mar = c(3, 4, 3, 2) )
+  plot(pr[, 2]+pr[, 3] ~ data$time, ylab = "Trend", main = "long and sine cosine")
+  points(pr[, 1] ~ data$time, ylab = "Trend", col="blue")
+}
+
+
+HacerLongSinMGCV(data, "preclampsi","fechaini",2)
+
+
+```
+
+# 4. Models Preeclampsia and PM
+
+## 4.1 Flexible function
+
+```{r}
+#| warning: false
+
+HacerModeloGAM<-function(data, 
+                         outcome,
+                         var, 
+                         covs, 
+                         covtime)
+{
+  ### DEAL DATA
+  data<-as.data.frame(data)
+  data$time<-as.numeric(data$fechaini-as.Date("2008-01-01"))
+  
+  
+  ### FORMULA
+  formula<-paste(outcome, " ~ ", var, " + ",covs," + ",covtime)
+  print(formula)
+  
+  ### MODEL
+  model <- gam::gam(as.formula(formula),
+                  family=binomial,
+                  na.action = na.exclude,
+                  data=data)
+
+  print(summary(model))
+  
+  ### PRINT COEFFICIENTS
+  modelex<-gam.exact(model)
+  print(round(modelex$coefficients,4))
+}
+
+
+
+HacerModeloGAMNoTime<-function(data, 
+                         outcome,
+                         var, 
+                         covs)
+{
+  ### DEAL DATA
+  data<-as.data.frame(data)
+  data$time<-as.numeric(data$fechaini-as.Date("2008-01-01"))
+  
+  
+  ### FORMULA
+  formula<-paste(outcome, " ~ ", var, " + ",covs)
+  print(formula)
+  
+  ### MODEL
+  model <- gam::gam(as.formula(formula),
+                  family=binomial,
+                  na.action = na.exclude,
+                  data=data)
+
+  print(summary(model))
+  
+  ### PRINT COEFFICIENTS
+  modelex<-gam.exact(model)
+  print(round(modelex$coefficients,4))
+}
+
+  
+```
+
+## 4.2 Modelos nulo, age (s=1) + time (s=3) sin cosine
+
+```{r}
+#| warning: false
+
+library(gam)
+data<-as.data.frame(data)
+data$time<-as.numeric(data$fechaini-as.Date("2008-01-01"))
+
+
+### SIN PM
+model <- gam::gam(data$preclampsi ~ s(data$age2, df = 1) + 
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time),
+                family=binomial,
+                na.action = na.exclude)
+
+summary(model)
+
+modelex<-gam.exact(model)
+print(modelex$coefficients)
+
+### REDO WITH FUNCTION
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="s(age2, df = 1)", 
+                covs="", 
+                covtime="sin(2*pi/365*time) + cos(2*pi/365*time)")
+
+
+```
+
+## 4.3 Modelos con PM + age(s=1) solamente
+
+```{r}
+
+#### Central Site CS
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="t3_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="w20_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="tot_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs + t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)")
+
+
+#### SPATIAL LUR SP
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="t3_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="w20_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="tot_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_sp + t2_PM25_sp + t3_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+HacerModeloGAMNoTime(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_sp + t1_PM25_sp + t2_PM25_sp + t3_PM25_sp", 
+                covs="s(age2, df = 1)")
+
+```
+
+## 4.4 Modelos PM y age (s=1) + time (var df) + sin cosine
+
+### 4.4.1. t1
+
+```{r}
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=1) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=2) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=3) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+```
+
+### 4.4.2. t2
+
+```{r}
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=1) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=2) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=3) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=5) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+
+```
+
+## 4.5. PM (vary) + age(s=1) + time(s=6df)
+
+```{r}
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="w20_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="tot_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs + t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs + t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs + t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6)")
+
+
+```
+
+## 4.6. PM (vary) + age(s=1) + time(s=var) + sincos
+
+### 4.6.1. time s=4df
+
+```{r}
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="w20_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="tot_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs + t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs + t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=4) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+```
+
+### 4.6.2. cs time s=6df
+
+ [ **Best models**]{style="color:red; font-size: 200%;"}
+```{r}
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="w20_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="tot_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs + t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs + t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+
+### GOOD
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs + t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs + t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+```
+
+### 4.6.3. sp time s=6df
+
+```{r}
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t3_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="w20_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="tot_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_sp + t2_PM25_sp + t3_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_sp + t1_PM25_sp + t2_PM25_sp + t3_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_sp + t1_PM25_sp + t2_PM25_sp + t3_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+
+### GOOD
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_sp + t2_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_sp + t2_PM25_sp", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time)")
+
+```
+
+### 4.6.4. cs time s=6df sincos 4x
+
+```{r}
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time) ")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="w20_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="tot_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs + t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs + t1_PM25_cs + t2_PM25_cs + t3_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+
+### GOOD
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc24w_PM25_cs + t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+
+HacerModeloGAM(data=data, 
+                outcome="preclampsi",
+                var="pc12w_PM25_cs + t2_PM25_cs", 
+                covs="s(age2, df = 1)",
+                covtime="s(data$time, df=6) +
+                sin(2*pi/365*data$time) +
+                cos(2*pi/365*data$time) +
+                sin(4*pi/365*data$time) +
+                cos(4*pi/365*data$time)")
+
+```
