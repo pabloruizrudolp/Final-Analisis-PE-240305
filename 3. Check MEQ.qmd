@@ -1,6 +1,6 @@
 ---
 title: "3. CHECK MEQ"
-author: "Pablo Ruiz"
+author: "Pablo Ruiz - María Elisa Quinteros"
 format: 
   html:
     self-contained: true
